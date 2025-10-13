@@ -142,7 +142,7 @@ async fn handle_post(State(state): State<AppState>, payload: String) -> String
             current_file = date_only;
 
             let last_record = get_last_date_recorded_async(&path_string).await;
-            // println!("---getting last recorded entry {:?}", last_record);
+            println!("---getting last recorded entry {:?}", last_record);
             current_date = last_record.map(|f| f.1);
             
             let new_file = OpenOptions::new()
@@ -189,7 +189,7 @@ async fn handle_post(State(state): State<AppState>, payload: String) -> String
         }
         else
         {
-            println!("Error with file")
+            println!("Error with file {:?}", current_file)
         }
     }
 
