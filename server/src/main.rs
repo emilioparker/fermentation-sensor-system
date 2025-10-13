@@ -236,7 +236,7 @@ async fn main() {
         .route("/samples", get(handle_get))
         .route("/report", get(handle_get_report)).with_state(shared_state);
 
-    let listener = TcpListener::bind("0.0.0.0:8080").await.unwrap();
+    let listener = TcpListener::bind("0.0.0.0:8000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 
 }
