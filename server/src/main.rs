@@ -4,8 +4,10 @@ use axum::{
 use chrono::{Date, DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::{net::TcpListener, sync::Mutex};
+use tower_http::services::ServeDir;
 use std::{fs::{self, File, OpenOptions}, net::SocketAddr, path::{self, Path}, sync::{atomic::AtomicU32, Arc}};
 use std::io::Write;
+
 
 
 #[derive(Deserialize)]
@@ -195,7 +197,7 @@ async fn handle_post(State(state): State<AppState>, payload: String) -> String
 }
 
 async fn handle_get(State(state): State<AppState>, Query(params): Query<GetParams>) -> String {
-    println!("Date: {}", params.date);
+    println!("requested with Date: {}", params.date);
     let path_string = format!("data/{}.csv", params.date);
     let all_data = get_data(&path_string);
     all_data
@@ -214,16 +216,27 @@ async fn main() {
 
     let shared_state = AppState 
     {
-        last_sample: Arc::new(Mutex::new("".to_owned())),
+        last_sample: Arc::new(Mutex::new("none".to_owned())),
         last_sample_count: Arc::new(AtomicU32::new(0))
     };
 
+
+    // tokio::spawn(async move 
+    // {
+    //     let app = Router::new()
+    //     .nest_service("/tracking", axum::routing::get_service(ServeDir::new("public")));
+    //     let http_listener = TcpListener::bind("0.0.0.0:80").await.unwrap();
+    //     axum::serve(http_listener, app).await.unwrap();
+    // });
+
     // Build our router
     let app = Router::new()
+        .nest_service("/tracking", axum::routing::get_service(ServeDir::new("public")))
         .route("/samples", post(handle_post))
         .route("/samples", get(handle_get))
         .route("/report", get(handle_get_report)).with_state(shared_state);
 
-    let listener = TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    let listener = TcpListener::bind("0.0.0.0:80").await.unwrap();
     axum::serve(listener, app).await.unwrap();
+
 }

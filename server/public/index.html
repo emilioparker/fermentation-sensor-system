@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chocolate Monitor</title>
+<style>
+  body {
+    background-color: #1b1b1b;
+    color: #d2b48c;
+    font-family: monospace;
+    /* display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh; */
+    margin: 0;
+    white-space: pre;
+    font-size: 14px;
+  }
+  .ascii {
+    text-align: center;
+  }
+  #chart { /* Or the ID of your chart's container div */
+        width: 100vw; /* 100% of viewport width */
+        height: 100vh; /* 100% of viewport height */
+        display: block; /* Removes extra space below inline elements */
+    }
+</style>
+</head>
+<body>
+<!-- <pre class="ascii">
+   ___________   ___________   ___________
+  |___________| |___________| |___________|
+  |           | |           | |           |
+  |   CHOCO   | |   LATE    | |   BAR     |
+  |___________| |___________| |___________|
+  |___________| |___________| |___________|
+  |___________| |___________| |___________|
+  |___________| |___________| |___________|
+  |___________| |___________| |___________|
+        ~ A sweet project ~
+</pre>
+
+<br> -->
+
+<!-- <label for="datePicker">Select a date:</label>
+<input type="date" id="datePicker">
+<p>Selected Date: <span id="selectedDate"></span></p>
+
+<script>
+const datePicker = document.getElementById('datePicker');
+const selectedDate = document.getElementById('selectedDate');
+
+datePicker.addEventListener('change', () => 
+{
+    selectedDate.textContent = datePicker.value; // Outputs YYYY-MM-DD
+});
+</script> -->
+
+<div>
+  <canvas id="chart"></canvas>
+</div>
+
+<!-- In your HTML, before Chart.js -->
+<!-- <script src="path/to/date-fns.min.js"></script>
+<script src="path/to/chartjs-adapter-date-fns.min.js"></script>
+<script src="path/to/chart.min.js"></script> -->
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/luxon@3"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1"></script>
+<script>
+
+    async function getReport() 
+    {
+        const response = await fetch('/report'); // your endpoint
+        const text = await response.text();
+        console.log("report data " + text)
+        const items = text.trim().split(',');
+
+        var count = parseInt(items[0]);
+        var lastRecordedDate = items[1];
+
+        return {count, lastRecordedDate};
+    }
+
+    async function loadData() 
+    {
+        var report = await getReport();
+        const date = report.lastRecordedDate.split("T")[0]; // "2025-10-13"
+        const response = await fetch('/samples?date=' + date); // your endpoint
+        const csvText = await response.text();
+        const lines = csvText.trim().split('\n');
+
+        const labels = [];
+        const sensorA = [];
+        const sensorB = [];
+        const sensorC = [];
+
+        for (const line of lines) 
+        {
+            const [timestamp, a, b, c] = line.split(',');
+            var utcDate = new Date(timestamp);
+            // const localTime = utcDate.toLocaleString("en-SV", { timeZone: "America/El_Salvador" });
+
+            labels.push(utcDate);
+            sensorA.push(parseFloat(a));
+            sensorB.push(parseFloat(b));
+            sensorC.push(parseFloat(c));
+        }
+
+        return { labels, sensorA, sensorB, sensorC };
+    }
+
+    // ... your chart configuration
+
+    async function makeChart() {
+      const data = await loadData();
+
+      console.log(data);
+
+      new Chart(document.getElementById('chart'), {
+        type: 'line',
+        data: {
+          labels: data.labels,
+          datasets: [
+            {
+              label: 'Sensor A',
+              data: data.sensorA,
+              borderColor: 'orange',
+              fill: false,
+            },
+            {
+              label: 'Sensor B',
+              data: data.sensorB,
+              borderColor: 'cyan',
+              fill: false,
+            },
+            {
+              label: 'Sensor C',
+              data: data.sensorC,
+              borderColor: 'lime',
+              fill: false,
+            },
+          ]
+        },
+        options: {
+          scales: {
+            x: {
+              type: 'time',
+              time: { unit: 'minute' },
+              ticks: { color: '#bbb' },
+            },
+            y: {
+              ticks: { color: '#bbb' },
+            }
+          },
+          plugins: {
+            legend: { labels: { color: '#fff' } }
+          }
+        }
+      });
+    }
+
+    makeChart();
+  </script>
+
+</body>
+</html>
