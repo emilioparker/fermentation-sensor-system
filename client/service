@@ -1,0 +1,14 @@
+[Unit]
+Description=Fermentation Sensor
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/motmot/Documents/SensorDeTemperatura/main.py
+WorkingDirectory=/home/motmot/Documents/SensorDeTemperatura
+StandardOutput=inherit
+StandardError=inherit
+Restart=always
+User=motmot
+
+[Install]
+WantedBy=multi-user.target

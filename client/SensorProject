@@ -1,0 +1,24 @@
+https://www-circuitbasics-com.translate.goog/raspberry-pi-i2c-lcd-set-up-and-programming/?_x_tr_sl=en&_x_tr_tl=es&_x_tr_hl=es&_x_tr_pto=tc
+
+
+i2cdetect -y 1
+27
+
+
+drivers
+https://gist.github.com/DenisFromHR/cc863375a6e19dce359d
+
+
+
+
+https://www.waveshare.com/wiki/Raspberry_Pi_Tutorial_Series:_1-Wire_DS18B20_Sensor
+
+
+28-3ce1d443e26c
+
+
+
+
+Activar ssh, dejar quemada la ip privada
+
+ssh motmot@169.254.1.2
