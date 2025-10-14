@@ -78,14 +78,18 @@ def send_data(file_path):
         if response.status_code == 200:
             print("Successfully sent file content to endpoint")
             print("Response:", response.text)
+            return 'ok'
         else:
             print(f"Failed to send data. Status code: {response.status_code}")
             print("Response:", response.text)
+            return response.status_code
 
     except FileNotFoundError:
         print(f"File not found: {file_path}")
+        return 'NotFound'
     except requests.exceptions.RequestException as e:
         print(f"Error sending request to {endpoint}: {e}")
+        return f"{e}"
  
 # print(' rom: '+ read_rom())
 last_sample_sent_time = datetime.now(timezone.utc)
@@ -103,7 +107,7 @@ while True:
     gmt_minus_6_time = now.astimezone(gmt_minus_6_offset)
 
     formated_time = gmt_minus_6_time.strftime("%H:%M:%S")
-    print(formated_time)
+    # print(formated_time)
 
     template_a = "A={:2.2f}"
     result_a = template_a.format(c_a)
@@ -112,7 +116,7 @@ while True:
     template_c = "C={:2.2f}"
     result_c = template_c.format(c_c)
 
-    print(result_a)
+    # print(result_a)
 
 
     mylcd.lcd_display_string(formated_time + ' ' + result_a, 1)
@@ -120,7 +124,7 @@ while True:
 
     # Calculate the time difference
     time_diff = now - last_sample_sent_time
-    if time_diff.seconds > 10 :
+    if time_diff.seconds > 10 * 60:
         last_sample_sent_time = now
 
         date_in_iso_format = gmt_minus_6_time.isoformat()
@@ -135,6 +139,15 @@ while True:
         with open('data/'+date_only, 'a') as file:
             file.write(record)
 
-        send_data('data/'+date_only)
+        result = send_data('data/'+date_only)
+
+        mylcd.lcd_clear()
+        if result == 'ok':
+            mylcd.lcd_display_string("Data sent", 1)
+            mylcd.lcd_display_string(date_in_iso_format, 2)
+        else:
+            mylcd.lcd_display_string(result, 1)
+            mylcd.lcd_display_string(date_in_iso_format, 2)
+        time.sleep(1)
 
     time.sleep(1)

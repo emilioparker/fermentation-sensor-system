@@ -1,7 +1,7 @@
 use axum::{
     extract::{Query, State}, routing::{get, post}, Json, Router
 };
-use chrono::{Date, DateTime, Utc};
+use chrono::{Date, DateTime, FixedOffset, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::{net::TcpListener, sync::Mutex};
 use tower_http::services::ServeDir;
@@ -21,26 +21,33 @@ struct AppState {
     last_sample_count: Arc<AtomicU32>,
 }
 
-fn extract_data(line : &str) -> (String, DateTime<Utc>, f32, f32, f32)
+fn extract_data(line : &str) -> (String, DateTime<FixedOffset>, f32, f32, f32)
 {
     let mut splitted_data = line.split(',');
+
+
     let date = splitted_data.next().unwrap_or("");
     // println!("record with date {}", date);
 
-    let dt: DateTime<Utc> = date.parse().unwrap();
+    let dt_with_tz = DateTime::parse_from_rfc3339(date)
+        .expect("Invalid datetime format");
+
+    // let dt_utc: DateTime<Utc> = dt_with_tz.with_timezone(&Utc);
+
+    // let dt: DateTime<Utc> = date.parse().unwrap();
     // Format to only include the date
-    let date_only = dt.format("%Y-%m-%d").to_string();
+    let date_only = dt_with_tz.format("%Y-%m-%d").to_string();
 
     let temp_a: f32 = splitted_data.next().unwrap().parse().unwrap(); // or f64
     let temp_b: f32 = splitted_data.next().unwrap().parse().unwrap(); // or f64
     let temp_c: f32 = splitted_data.next().unwrap().parse().unwrap(); // or f64
 
 
-    return (date_only ,dt, temp_a, temp_b, temp_c);
+    return (date_only ,dt_with_tz, temp_a, temp_b, temp_c);
 }
 
 
-async fn get_last_date_recorded_async(path_string: &str) -> Option<(u32, DateTime<Utc>)> 
+async fn get_last_date_recorded_async(path_string: &str) -> Option<(u32, DateTime<FixedOffset>)> 
 {
     match tokio::fs::read_to_string(path_string).await 
     {
@@ -81,7 +88,7 @@ async fn get_last_date_recorded_async(path_string: &str) -> Option<(u32, DateTim
     }
 }
 
-fn get_last_date_recorded(path_string : &str) -> Option<DateTime<Utc>>
+fn get_last_date_recorded(path_string : &str) -> Option<DateTime<FixedOffset>>
 {
     let contents = fs::read_to_string(path_string);
     if let Ok(content) = contents
