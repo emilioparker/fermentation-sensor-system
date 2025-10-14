@@ -92,7 +92,7 @@ def send_data(file_path):
         return f"{e}"
  
 # print(' rom: '+ read_rom())
-last_sample_sent_time = datetime.now(timezone.utc)
+last_sample_sent_time = datetime.now(timezone.utc) - timedelta(minutes=5)
 endpoint = "http://18.221.254.212:8000/samples"
 while True:
 
@@ -124,7 +124,7 @@ while True:
 
     # Calculate the time difference
     time_diff = now - last_sample_sent_time
-    if time_diff.seconds > 10 * 60:
+    if time_diff.seconds > 5 * 60:
         last_sample_sent_time = now
 
         date_in_iso_format = gmt_minus_6_time.isoformat()
