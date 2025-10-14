@@ -1,9 +1,11 @@
 # requires RPi_I2C_driver.py
+from zoneinfo import ZoneInfo
 import RPi_I2C_driver
 from time import *
+from datetime import datetime, timezone, timedelta
+import requests
 
 
-from datetime import datetime, timezone
 
 import os
 import glob
@@ -37,10 +39,10 @@ mylcd.lcd_clear()
 mylcd.lcd_display_string("Reading:", 1)
 
 
-def read_rom():
-    name_file=device_folder+'/name'
-    f = open(name_file,'r')
-    return f.readline()
+# def read_rom():
+#     name_file=device_folder+'/name'
+#     f = open(name_file,'r')
+#     return f.readline()
  
 def read_temp_raw(index):
     f = open(devices_files[index], 'r')
@@ -62,8 +64,32 @@ def read_temp(index):
         temp_c = float(temp_string) / 1000.0
         temp_f = temp_c * 9.0 / 5.0 + 32.0
         return temp_c, temp_f
+
+def send_data(file_path):
+    try:
+        # Read the file content
+        with open(file_path, 'r', encoding='utf-8') as file:
+            content = file.read()
+
+        # Send content to the endpoint
+        response = requests.post(endpoint, data=content)
+
+        # Check response
+        if response.status_code == 200:
+            print("Successfully sent file content to endpoint")
+            print("Response:", response.text)
+        else:
+            print(f"Failed to send data. Status code: {response.status_code}")
+            print("Response:", response.text)
+
+    except FileNotFoundError:
+        print(f"File not found: {file_path}")
+    except requests.exceptions.RequestException as e:
+        print(f"Error sending request to {endpoint}: {e}")
  
 # print(' rom: '+ read_rom())
+last_sample_sent_time = datetime.now(timezone.utc)
+endpoint = "http://18.221.254.212:8000/samples"
 while True:
 
     c_a,f_a = read_temp(0);
@@ -71,7 +97,12 @@ while True:
     c_c,f_c = read_temp(2);
 
     now = datetime.now(timezone.utc)
-    formated_time = now.strftime("%H:%M:%S")
+
+
+    gmt_minus_6_offset = timezone(timedelta(hours=-6))
+    gmt_minus_6_time = now.astimezone(gmt_minus_6_offset)
+
+    formated_time = gmt_minus_6_time.strftime("%H:%M:%S")
     print(formated_time)
 
     template_a = "A={:2.2f}"
@@ -83,8 +114,27 @@ while True:
 
     print(result_a)
 
+
     mylcd.lcd_display_string(formated_time + ' ' + result_a, 1)
     mylcd.lcd_display_string(result_b + ' ' + result_c, 2)
 
+    # Calculate the time difference
+    time_diff = now - last_sample_sent_time
+    if time_diff.seconds > 10 :
+        last_sample_sent_time = now
+
+        date_in_iso_format = gmt_minus_6_time.isoformat()
+        date_only = date_in_iso_format.split("T")[0]
+
+        clean_temp_template = "{:2.2f}"
+        record = date_in_iso_format+','+ clean_temp_template.format(c_a) + ',' + clean_temp_template.format(c_b) + ',' + clean_temp_template.format(c_c) + '\n'
+
+        print(record)
+
+        # Open file in append mode
+        with open('data/'+date_only, 'a') as file:
+            file.write(record)
+
+        send_data('data/'+date_only)
+
     time.sleep(1)
-time.sleep(1)
