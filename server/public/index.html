@@ -88,6 +88,7 @@ datePicker.addEventListener('change', () =>
     {
         var report = await getReport();
         const date = report.lastRecordedDate.split("T")[0]; // "2025-10-13"
+        console.log("requested_date " + date);
         const response = await fetch('/samples?date=' + date); // your endpoint
         const csvText = await response.text();
         const lines = csvText.trim().split('\n');
