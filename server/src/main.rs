@@ -27,7 +27,7 @@ fn extract_data(line : &str) -> (String, DateTime<FixedOffset>, f32, f32, f32)
 
 
     let date = splitted_data.next().unwrap_or("");
-    // println!("record with date {}", date);
+    println!("record with date {}", date);
 
     let dt_with_tz = DateTime::parse_from_rfc3339(date)
         .expect("Invalid datetime format");
@@ -157,7 +157,20 @@ async fn handle_post(State(state): State<AppState>, payload: String) -> String
                 .append(true)   // open in append mode
                 .open(&path_string);
 
-            active_file = new_file.ok();
+            match new_file {
+                Ok(file) => 
+                {
+                    active_file = Some(file)
+                },
+                Err(e) => 
+                {
+                    active_file = None;
+                    println!("{:?}",e)
+                },
+            }
+
+
+            // active_file = new_file.ok();
 
             state.last_sample_count.store(last_record.map_or(0, |f|f.0),std::sync::atomic::Ordering::Relaxed);
         }
