@@ -21,7 +21,7 @@ struct AppState {
     last_sample_count: Arc<AtomicU32>,
 }
 
-fn extract_data(line : &str) -> (String, DateTime<FixedOffset>, f32, f32, f32)
+fn extract_data(line : &str) -> Option<(String, DateTime<FixedOffset>, f32, f32, f32)>
 {
     let mut splitted_data = line.split(',');
 
@@ -29,21 +29,31 @@ fn extract_data(line : &str) -> (String, DateTime<FixedOffset>, f32, f32, f32)
     let date = splitted_data.next().unwrap_or("");
     println!("record with date {}", date);
 
-    let dt_with_tz = DateTime::parse_from_rfc3339(date)
-        .expect("Invalid datetime format");
+    let dt_with_tz = DateTime::parse_from_rfc3339(date);
+
+    match dt_with_tz {
+        Ok(parsed_date) => 
+        {
+            let date_only = parsed_date.format("%Y-%m-%d").to_string();
+
+            let temp_a: f32 = splitted_data.next().unwrap().parse().unwrap(); // or f64
+            let temp_b: f32 = splitted_data.next().unwrap().parse().unwrap(); // or f64
+            let temp_c: f32 = splitted_data.next().unwrap().parse().unwrap(); // or f64
+
+
+            return Some((date_only ,parsed_date, temp_a, temp_b, temp_c));
+        },
+        Err(error) => 
+        {
+            println!("{:?}", error);
+            None
+        },
+    }
 
     // let dt_utc: DateTime<Utc> = dt_with_tz.with_timezone(&Utc);
 
     // let dt: DateTime<Utc> = date.parse().unwrap();
     // Format to only include the date
-    let date_only = dt_with_tz.format("%Y-%m-%d").to_string();
-
-    let temp_a: f32 = splitted_data.next().unwrap().parse().unwrap(); // or f64
-    let temp_b: f32 = splitted_data.next().unwrap().parse().unwrap(); // or f64
-    let temp_c: f32 = splitted_data.next().unwrap().parse().unwrap(); // or f64
-
-
-    return (date_only ,dt_with_tz, temp_a, temp_b, temp_c);
 }
 
 
@@ -64,8 +74,15 @@ async fn get_last_date_recorded_async(path_string: &str) -> Option<(u32, DateTim
             if let Some(last_line) = last_line
             {
                 println!("Last line: {}", last_line);
-                let (_date_only, date, _temp_a, _temp_b, _temp_c) = extract_data(last_line);
-                Some((count,date))
+                if let Some((_date_only, date, _temp_a, _temp_b, _temp_c)) = extract_data(last_line)
+                {
+                    Some((count,date))
+                }
+                else 
+                {
+                    println!("Error extracting data in get last record");
+                    None
+                }
             } 
             else 
             {
@@ -96,8 +113,14 @@ fn get_last_date_recorded(path_string : &str) -> Option<DateTime<FixedOffset>>
         if let Some(last_line) = content.lines().last()
         {
             println!("Last line: {}", last_line);
-            let (date_only, date, temp_a, temp_b, temp_c) = extract_data(last_line);
-            return Some(date);
+            if let Some((date_only, date, temp_a, temp_b, temp_c)) = extract_data(last_line)
+            {
+                return Some(date);
+            }
+            else {
+                println!("Error decoding data get last date recorded");
+                return None;
+            }
 
         }
         else
@@ -141,75 +164,82 @@ async fn handle_post(State(state): State<AppState>, payload: String) -> String
     let lines = payload.lines();
     for line in lines
     {
-        let (date_only, date, temp_a, temp_b, temp_c) = extract_data(line);
-        let path_string = format!("data/{}.csv", date_only);
-
-        if current_file != date_only
+        if let Some((date_only, date, temp_a, temp_b, temp_c)) = extract_data(line)
         {
-            current_file = date_only;
+            let path_string = format!("data/{}.csv", date_only);
 
-            let last_record = get_last_date_recorded_async(&path_string).await;
-            println!("---getting last recorded entry {:?}", last_record);
-            current_date = last_record.map(|f| f.1);
-            
-            let new_file = OpenOptions::new()
-                .create(true)   // create file if it doesn't exist
-                .append(true)   // open in append mode
-                .open(&path_string);
+            if current_file != date_only
+            {
+                current_file = date_only;
 
-            match new_file {
-                Ok(file) => 
-                {
-                    active_file = Some(file)
-                },
-                Err(e) => 
-                {
-                    active_file = None;
-                    println!("{:?}",e)
-                },
+                let last_record = get_last_date_recorded_async(&path_string).await;
+                println!("---getting last recorded entry {:?}", last_record);
+                current_date = last_record.map(|f| f.1);
+                
+                let new_file = OpenOptions::new()
+                    .create(true)   // create file if it doesn't exist
+                    .append(true)   // open in append mode
+                    .open(&path_string);
+
+                match new_file {
+                    Ok(file) => 
+                    {
+                        active_file = Some(file)
+                    },
+                    Err(e) => 
+                    {
+                        active_file = None;
+                        println!("{:?}",e)
+                    },
+                }
+
+
+                // active_file = new_file.ok();
+
+                state.last_sample_count.store(last_record.map_or(0, |f|f.0),std::sync::atomic::Ordering::Relaxed);
             }
 
-
-            // active_file = new_file.ok();
-
-            state.last_sample_count.store(last_record.map_or(0, |f|f.0),std::sync::atomic::Ordering::Relaxed);
-        }
-
-        if let Some(ref mut file) = active_file
-        {
-            // println!("Adding record wiht {} last was {:?}", date, current_date);
-            if let Some(last_recorded_time) = current_date
+            if let Some(ref mut file) = active_file
             {
-                if date > last_recorded_time
+                // println!("Adding record wiht {} last was {:?}", date, current_date);
+                if let Some(last_recorded_time) = current_date
                 {
-                    // println!("add and update date");
-                    current_date = Some(date);
-                    let _r =writeln!(file, "{line}");
+                    if date > last_recorded_time
+                    {
+                        // println!("add and update date");
+                        current_date = Some(date);
+                        let _r =writeln!(file, "{line}");
 
-                    let mut lock = state.last_sample.lock().await;
-                    *lock = line.to_string();
+                        let mut lock = state.last_sample.lock().await;
+                        *lock = line.to_string();
 
-                    state.last_sample_count.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
+                        state.last_sample_count.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
 
+                    }
+                    else
+                    {
+                        // println!("excluding");
+                    }
                 }
                 else
                 {
-                    // println!("excluding");
+                    current_date = Some(date);
+                    let _r = writeln!(file, "{line}");
+
+                    let mut lock = state.last_sample.lock().await;
+                    *lock = line.to_string();
+                    state.last_sample_count.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
                 }
             }
             else
             {
-                current_date = Some(date);
-                let _r = writeln!(file, "{line}");
-
-                let mut lock = state.last_sample.lock().await;
-                *lock = line.to_string();
-                state.last_sample_count.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
+                println!("Error with file {:?}", current_file)
             }
         }
         else
         {
-            println!("Error with file {:?}", current_file)
+            println!("Error receiving data from sensor station");
+            return "ok".to_owned();
         }
     }
 
