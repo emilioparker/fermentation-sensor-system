@@ -27,7 +27,7 @@ fn extract_data(line : &str) -> Option<(String, DateTime<FixedOffset>, f32, f32,
 
 
     let date = splitted_data.next().unwrap_or("");
-    println!("record with date ({:?})", date);
+    // println!("record with date ({:?})", date);
 
     let dt_with_tz = DateTime::parse_from_rfc3339(date);
 
