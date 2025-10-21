@@ -27,7 +27,7 @@ fn extract_data(line : &str) -> Option<(String, DateTime<FixedOffset>, f32, f32,
 
 
     let date = splitted_data.next().unwrap_or("");
-    println!("record with date {}", date);
+    println!("record with date ({:?})", date);
 
     let dt_with_tz = DateTime::parse_from_rfc3339(date);
 
@@ -238,8 +238,8 @@ async fn handle_post(State(state): State<AppState>, payload: String) -> String
         }
         else
         {
-            println!("Error receiving data from sensor station");
-            return "ok".to_owned();
+            println!("Error receiving data from sensor station, try to continue reading the file");
+            // return "ok".to_owned();
         }
     }
 
@@ -292,4 +292,14 @@ async fn main() {
     let listener = TcpListener::bind("0.0.0.0:8000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 
-}
+#[cfg(test)]
+mod tests {
+    use super::*;  // Import parent module
+
+    #[test]
+    fn test_add() {
+        let test_date = "2025-10-20T16:24:31.343795-06:00";
+        let dt_with_tz = DateTime::parse_from_rfc3339(test_date);
+        assert!(true)
+    }
+}}
