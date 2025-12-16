@@ -71,25 +71,33 @@ datePicker.addEventListener('change', () =>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1"></script>
 <script>
 
+    const url = new URL(window.location.href);
+    const sensor_id = url.searchParams.get("sensor");
+
     async function getReport() 
     {
-        const response = await fetch('/report'); // your endpoint
+        const response = await fetch('/report?sensor='+sensor_id); // your endpoint
         const text = await response.text();
         console.log("report data " + text)
         const items = text.trim().split(',');
 
-        var count = parseInt(items[0]);
+        var sensor = items[0];
         var lastRecordedDate = items[1];
 
-        return {count, lastRecordedDate};
+        return {sensor, lastRecordedDate};
     }
 
     async function loadData() 
     {
         var report = await getReport();
+        if(report.lastRecordedDate == "error")
+        {
+            return null;
+        }
+
         const date = report.lastRecordedDate.split("T")[0]; // "2025-10-13"
         console.log("requested_date " + date);
-        const response = await fetch('/samples?date=' + date); // your endpoint
+        const response = await fetch('/samples?sensor='+sensor_id+'&date=' + date); // your endpoint
         const csvText = await response.text();
         const lines = csvText.trim().split('\n');
 
@@ -100,7 +108,7 @@ datePicker.addEventListener('change', () =>
 
         for (const line of lines) 
         {
-            const [timestamp, a, b, c] = line.split(',');
+            const [sensor,timestamp, a, b, c] = line.split(',');
             var utcDate = new Date(timestamp);
             // const localTime = utcDate.toLocaleString("en-SV", { timeZone: "America/El_Salvador" });
 
@@ -119,6 +127,8 @@ datePicker.addEventListener('change', () =>
       const data = await loadData();
 
       console.log(data);
+
+      if(data == null) return;
 
       new Chart(document.getElementById('chart'), {
         type: 'line',

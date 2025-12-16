@@ -5,33 +5,42 @@ use chrono::{Date, DateTime, FixedOffset, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::{net::TcpListener, sync::Mutex};
 use tower_http::services::ServeDir;
-use std::{fs::{self, File, OpenOptions}, net::SocketAddr, path::{self, Path}, sync::{atomic::AtomicU32, Arc}};
+use std::{collections::{HashMap, HashSet}, fs::{self, File, OpenOptions}, net::SocketAddr, path::{self, Path}, sync::{Arc, atomic::AtomicU32}};
 use std::io::Write;
 
 
 
 #[derive(Deserialize)]
-struct GetParams {
+struct GetParams 
+{
+    sensor: String,
     date: String,
 }
 
-#[derive(Clone)]
-struct AppState {
-    last_sample: Arc<tokio::sync::Mutex<String>>,
-    last_sample_count: Arc<AtomicU32>,
+#[derive(Deserialize)]
+struct GetReportParams 
+{
+    sensor: String,
 }
 
-fn extract_data(line : &str) -> Option<(String, DateTime<FixedOffset>, f32, f32, f32)>
+#[derive(Clone)]
+struct AppState 
+{
+    last_sample: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
+}
+
+fn extract_data(line : &str) -> Option<(String, String, DateTime<FixedOffset>, f32, f32, f32)>
 {
     let mut splitted_data = line.split(',');
 
-
+    let sensor_id = splitted_data.next().unwrap_or("ufo").to_string();
     let date = splitted_data.next().unwrap_or("");
     // println!("record with date ({:?})", date);
 
     let dt_with_tz = DateTime::parse_from_rfc3339(date);
 
-    match dt_with_tz {
+    match dt_with_tz 
+    {
         Ok(parsed_date) => 
         {
             let date_only = parsed_date.format("%Y-%m-%d").to_string();
@@ -41,7 +50,7 @@ fn extract_data(line : &str) -> Option<(String, DateTime<FixedOffset>, f32, f32,
             let temp_c: f32 = splitted_data.next().unwrap().parse().unwrap(); // or f64
 
 
-            return Some((date_only ,parsed_date, temp_a, temp_b, temp_c));
+            return Some((date_only ,sensor_id, parsed_date, temp_a, temp_b, temp_c));
         },
         Err(error) => 
         {
@@ -74,7 +83,7 @@ async fn get_last_date_recorded_async(path_string: &str) -> Option<(u32, DateTim
             if let Some(last_line) = last_line
             {
                 println!("Last line: {}", last_line);
-                if let Some((_date_only, date, _temp_a, _temp_b, _temp_c)) = extract_data(last_line)
+                if let Some((_date_only, sensor_id, date, _temp_a, _temp_b, _temp_c)) = extract_data(last_line)
                 {
                     Some((count,date))
                 }
@@ -113,7 +122,7 @@ fn get_last_date_recorded(path_string : &str) -> Option<DateTime<FixedOffset>>
         if let Some(last_line) = content.lines().last()
         {
             println!("Last line: {}", last_line);
-            if let Some((date_only, date, temp_a, temp_b, temp_c)) = extract_data(last_line)
+            if let Some((date_only, sensor_id, date, temp_a, temp_b, temp_c)) = extract_data(last_line)
             {
                 return Some(date);
             }
@@ -164,9 +173,9 @@ async fn handle_post(State(state): State<AppState>, payload: String) -> String
     let lines = payload.lines();
     for line in lines
     {
-        if let Some((date_only, date, temp_a, temp_b, temp_c)) = extract_data(line)
+        if let Some((date_only, sensor_id, date, _temp_a, _temp_b, _temp_c)) = extract_data(line)
         {
-            let path_string = format!("data/{}.csv", date_only);
+            let path_string = format!("data/{}_{}.csv", sensor_id, date_only);
 
             if current_file != date_only
             {
@@ -181,7 +190,8 @@ async fn handle_post(State(state): State<AppState>, payload: String) -> String
                     .append(true)   // open in append mode
                     .open(&path_string);
 
-                match new_file {
+                match new_file 
+                {
                     Ok(file) => 
                     {
                         active_file = Some(file)
@@ -195,8 +205,6 @@ async fn handle_post(State(state): State<AppState>, payload: String) -> String
 
 
                 // active_file = new_file.ok();
-
-                state.last_sample_count.store(last_record.map_or(0, |f|f.0),std::sync::atomic::Ordering::Relaxed);
             }
 
             if let Some(ref mut file) = active_file
@@ -211,9 +219,7 @@ async fn handle_post(State(state): State<AppState>, payload: String) -> String
                         let _r =writeln!(file, "{line}");
 
                         let mut lock = state.last_sample.lock().await;
-                        *lock = line.to_string();
-
-                        state.last_sample_count.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
+                        lock.insert(sensor_id, line.to_string());
 
                     }
                     else
@@ -227,8 +233,7 @@ async fn handle_post(State(state): State<AppState>, payload: String) -> String
                     let _r = writeln!(file, "{line}");
 
                     let mut lock = state.last_sample.lock().await;
-                    *lock = line.to_string();
-                    state.last_sample_count.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
+                    lock.insert(sensor_id, line.to_string());
                 }
             }
             else
@@ -246,28 +251,38 @@ async fn handle_post(State(state): State<AppState>, payload: String) -> String
     return "ok".to_owned();
 }
 
-async fn handle_get(State(state): State<AppState>, Query(params): Query<GetParams>) -> String {
-    println!("requested with Date: {}", params.date);
-    let path_string = format!("data/{}.csv", params.date);
+async fn handle_get(State(state): State<AppState>, Query(params): Query<GetParams>) -> String 
+{
+    println!("requested data for sensor {} with Date: {}", params.sensor, params.date);
+    let path_string = format!("data/{}_{}.csv",params.sensor, params.date);
     let all_data = get_data(&path_string);
     all_data
 }
 
-async fn handle_get_report(State(state): State<AppState>, date: String) -> String {
-    println!("{}", date);
-    let last_record = state.last_sample.lock().await;
-    let count = state.last_sample_count.load(std::sync::atomic::Ordering::Relaxed);
-    let data = format!("{count},{last_record}");
-    return data;
+async fn handle_get_report(State(state): State<AppState>, Query(params) : Query<GetReportParams>) -> String 
+{
+    println!("requested report for sensor {}", params.sensor);
+    let samples_lock = state.last_sample.lock().await;
+    if let Some(last_sample)  = samples_lock.get(&params.sensor)
+    {
+        let data = format!("{last_sample}");
+        return data;
+    }
+    else 
+    {
+        let data = format!("{},error", params.sensor);
+        return data;
+    }
+
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() 
+{
 
     let shared_state = AppState 
     {
-        last_sample: Arc::new(Mutex::new("none".to_owned())),
-        last_sample_count: Arc::new(AtomicU32::new(0))
+        last_sample: Arc::new(Mutex::new(HashMap::new())),
     };
 
 
@@ -289,7 +304,7 @@ async fn main() {
 
     println!("running server");
 
-    let listener = TcpListener::bind("0.0.0.0:8000").await.unwrap();
+    let listener = TcpListener::bind("0.0.0.0:8080").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 
 #[cfg(test)]

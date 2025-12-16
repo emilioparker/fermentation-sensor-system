@@ -18,10 +18,20 @@ os.system('modprobe w1-therm')
 base_dir = '/sys/bus/w1/devices/'
 # Get all the filenames begin with 28 in the path base_dir.
 
+# motmot 1
 sensors = [
     "28-0730d44661a3",
     "28-0fe30087603c",
     "28-3ce1d443e26c"
+]
+
+id = 'gaspar'
+
+# motmot 2
+sensors = [
+    "28-00000077e190",
+    "28-000000b92ec0",
+    "28-000000b94557"
 ]
 
 device_folders = list(map(lambda s: base_dir + s, sensors))
@@ -31,7 +41,7 @@ devices_files = list(map(lambda s: s + '/w1_slave', device_folders))
 mylcd = RPi_I2C_driver.lcd()
 mylcd.backlight(0)
 mylcd.lcd_display_string("Starting..", 1)
-mylcd.lcd_display_string("¯\_(ツ)_/¯", 2)
+mylcd.lcd_display_string("(ツ)", 2)
 
 sleep(2) # 2 sec delay
 
@@ -82,7 +92,7 @@ def send_data(file_path):
         else:
             print(f"Failed to send data. Status code: {response.status_code}")
             print("Response:", response.text)
-            return response.status_code
+            return str(response.status_code)
 
     except FileNotFoundError:
         print(f"File not found: {file_path}")
@@ -93,7 +103,7 @@ def send_data(file_path):
  
 # print(' rom: '+ read_rom())
 last_sample_sent_time = datetime.now(timezone.utc) - timedelta(minutes=5)
-endpoint = "http://18.221.254.212:8000/samples"
+endpoint = "http://18.221.254.212:8080/samples"
 while True:
 
     c_a,f_a = read_temp(0);
@@ -131,7 +141,7 @@ while True:
         date_only = date_in_iso_format.split("T")[0]
 
         clean_temp_template = "{:2.2f}"
-        record = date_in_iso_format+','+ clean_temp_template.format(c_a) + ',' + clean_temp_template.format(c_b) + ',' + clean_temp_template.format(c_c) + '\n'
+        record = id+','+date_in_iso_format+','+ clean_temp_template.format(c_a) + ',' + clean_temp_template.format(c_b) + ',' + clean_temp_template.format(c_c) + '\n'
 
         print(record)
 

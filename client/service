@@ -3,8 +3,8 @@ Description=Fermentation Sensor
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 /home/motmot/Documents/SensorDeTemperatura/main.py
-WorkingDirectory=/home/motmot/Documents/SensorDeTemperatura
+ExecStart=/usr/bin/python3 /home/motmot/Documents/SensorDeTemperatura/client/main.py
+WorkingDirectory=/home/motmot/Documents/SensorDeTemperatura/client
 StandardOutput=inherit
 StandardError=inherit
 Restart=always
