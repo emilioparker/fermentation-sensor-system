@@ -103,7 +103,7 @@ def send_data(file_path):
  
 # print(' rom: '+ read_rom())
 last_sample_sent_time = datetime.now(timezone.utc) - timedelta(minutes=5)
-endpoint = "http://18.221.254.212:8080/samples"
+endpoint = "https://cacao.parkerlabs.dev/samples"
 while True:
 
     c_a,f_a = read_temp(0);
