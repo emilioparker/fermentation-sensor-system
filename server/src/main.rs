@@ -158,6 +158,7 @@ async fn handle_post(State(state): State<AppState>, payload: String) -> String
     let mut current_date= None;
     let mut active_file: Option<File> =  None;
 
+    println!("HandlePost:Received {} lines", payload.lines().count());
     let lines = payload.lines();
     for line in lines
     {
@@ -241,7 +242,7 @@ async fn handle_post(State(state): State<AppState>, payload: String) -> String
 
 async fn handle_get(State(state): State<AppState>, Query(params): Query<GetParams>) -> String 
 {
-    println!("requested data for sensor {} with Date: {}", params.sensor, params.date);
+    println!("HandleGet:requested data for sensor {} with Date: {}", params.sensor, params.date);
     let path_string = format!("data/{}_{}.csv",params.sensor, params.date);
     let all_data = get_data(&path_string);
     all_data
@@ -249,7 +250,7 @@ async fn handle_get(State(state): State<AppState>, Query(params): Query<GetParam
 
 async fn handle_get_report(State(state): State<AppState>, Query(params) : Query<GetReportParams>) -> String 
 {
-    println!("requested report for sensor {}", params.sensor);
+    println!("HandleGetReport:requested report for sensor {}", params.sensor);
     let samples_lock = state.last_sample.lock().await;
     if let Some(last_sample)  = samples_lock.get(&params.sensor)
     {
