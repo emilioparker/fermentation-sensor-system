@@ -29,40 +29,59 @@ struct AppState
     last_sample: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
 }
 
-fn extract_data(line : &str) -> Option<(String, String, DateTime<FixedOffset>, f32, f32, f32)>
+fn extract_data(line: &str) -> Option<(String, String, DateTime<FixedOffset>, f32, f32, f32, f32, f32, f32)>
 {
-    let mut splitted_data = line.split(',');
+    let mut parts = line.split(',');
 
-    let sensor_id = splitted_data.next().unwrap_or("ufo").to_string();
-    let date = splitted_data.next().unwrap_or("");
-    // println!("record with date ({:?})", date);
+    let first = parts.next().unwrap_or("").trim();
+    let is_new_format = first == "01";
+    println!("data version: {}", if is_new_format { first } else { "legacy" });
 
-    let dt_with_tz = DateTime::parse_from_rfc3339(date);
+    let sensor_id: String;
+    let date_str: &str;
+    let t0: f32;
+    let t1: f32;
+    let t2: f32;
+    let t3: f32;
+    let humidity: f32;
+    let dht_temp: f32;
 
-    match dt_with_tz 
+    if is_new_format
     {
-        Ok(parsed_date) => 
+        sensor_id = parts.next().unwrap_or("ufo").trim().to_string();
+        date_str = parts.next().unwrap_or("");
+        t0       = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
+        t1       = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
+        t2       = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
+        t3       = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
+        humidity = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
+        dht_temp = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
+    }
+    else
+    {
+        sensor_id = first.to_string();
+        date_str  = parts.next().unwrap_or("");
+        t0        = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
+        t1        = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
+        t2        = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
+        t3        = 0.0;
+        humidity  = 0.0;
+        dht_temp  = 0.0;
+    }
+
+    match DateTime::parse_from_rfc3339(date_str)
+    {
+        Ok(parsed_date) =>
         {
             let date_only = parsed_date.format("%Y-%m-%d").to_string();
-
-            let temp_a: f32 = splitted_data.next().unwrap().parse().unwrap(); // or f64
-            let temp_b: f32 = splitted_data.next().unwrap().parse().unwrap(); // or f64
-            let temp_c: f32 = splitted_data.next().unwrap().parse().unwrap(); // or f64
-
-
-            return Some((date_only ,sensor_id, parsed_date, temp_a, temp_b, temp_c));
+            Some((date_only, sensor_id, parsed_date, t0, t1, t2, t3, humidity, dht_temp))
         },
-        Err(error) => 
+        Err(error) =>
         {
             println!("{:?}", error);
             None
         },
     }
-
-    // let dt_utc: DateTime<Utc> = dt_with_tz.with_timezone(&Utc);
-
-    // let dt: DateTime<Utc> = date.parse().unwrap();
-    // Format to only include the date
 }
 
 
@@ -83,7 +102,7 @@ async fn get_last_date_recorded_async(path_string: &str) -> Option<(u32, DateTim
             if let Some(last_line) = last_line
             {
                 println!("Last line: {}", last_line);
-                if let Some((_date_only, sensor_id, date, _temp_a, _temp_b, _temp_c)) = extract_data(last_line)
+                if let Some((_date_only, _sensor_id, date, ..)) = extract_data(last_line)
                 {
                     Some((count,date))
                 }
@@ -111,37 +130,6 @@ async fn get_last_date_recorded_async(path_string: &str) -> Option<(u32, DateTim
             }
             None
         }
-    }
-}
-
-fn get_last_date_recorded(path_string : &str) -> Option<DateTime<FixedOffset>>
-{
-    let contents = fs::read_to_string(path_string);
-    if let Ok(content) = contents
-    {
-        if let Some(last_line) = content.lines().last()
-        {
-            println!("Last line: {}", last_line);
-            if let Some((date_only, sensor_id, date, temp_a, temp_b, temp_c)) = extract_data(last_line)
-            {
-                return Some(date);
-            }
-            else {
-                println!("Error decoding data get last date recorded");
-                return None;
-            }
-
-        }
-        else
-        {
-            println!("File is empty");
-            return None;
-        }
-    }
-    else 
-    {
-        println!("file not found");
-        return None;
     }
 }
 
@@ -173,7 +161,7 @@ async fn handle_post(State(state): State<AppState>, payload: String) -> String
     let lines = payload.lines();
     for line in lines
     {
-        if let Some((date_only, sensor_id, date, _temp_a, _temp_b, _temp_c)) = extract_data(line)
+        if let Some((date_only, sensor_id, date, ..)) = extract_data(line)
         {
             let path_string = format!("data/{}_{}.csv", sensor_id, date_only);
 
@@ -317,4 +305,8 @@ mod tests {
         let dt_with_tz = DateTime::parse_from_rfc3339(test_date);
         assert!(true)
     }
+
+
+
+    // SENSOR_ID, datetime, t0, t1, t2, t3, humidity, dht_temp
 }}
