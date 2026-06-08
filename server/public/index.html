@@ -105,20 +105,33 @@ datePicker.addEventListener('change', () =>
         const sensorA = [];
         const sensorB = [];
         const sensorC = [];
+        const sensorD = [];
+        const humidity = [];
+        const ambientTemp = [];
 
-        for (const line of lines) 
+        for (const line of lines)
         {
-            const [sensor,timestamp, a, b, c] = line.split(',');
-            var utcDate = new Date(timestamp);
-            // const localTime = utcDate.toLocaleString("en-SV", { timeZone: "America/El_Salvador" });
+            const fields = line.split(',');
+            let timestamp, a, b, c, d, hum, amb;
 
-            labels.push(utcDate);
+            if (fields.length >= 9) {
+                // version,sensor_id,date,temp1,temp2,temp3,temp4,humidity,ambient_temperature
+                [, , timestamp, a, b, c, d, hum, amb] = fields;
+            } else {
+                // sensor_id,date,temp1,temp2,temp3
+                [, timestamp, a, b, c] = fields;
+            }
+
+            labels.push(new Date(timestamp));
             sensorA.push(parseFloat(a));
             sensorB.push(parseFloat(b));
             sensorC.push(parseFloat(c));
+            if (d !== undefined) sensorD.push(parseFloat(d));
+            if (hum !== undefined) humidity.push(parseFloat(hum));
+            if (amb !== undefined) ambientTemp.push(parseFloat(amb));
         }
 
-        return { labels, sensorA, sensorB, sensorC };
+        return { labels, sensorA, sensorB, sensorC, sensorD, humidity, ambientTemp };
     }
 
     // ... your chart configuration
@@ -130,30 +143,23 @@ datePicker.addEventListener('change', () =>
 
       if(data == null) return;
 
+      const datasets = [
+        { label: 'Sensor A', data: data.sensorA, borderColor: 'orange', fill: false },
+        { label: 'Sensor B', data: data.sensorB, borderColor: 'cyan',   fill: false },
+        { label: 'Sensor C', data: data.sensorC, borderColor: 'lime',   fill: false },
+      ];
+
+      if (data.sensorD.length > 0) {
+        datasets.push({ label: 'Sensor D',          data: data.sensorD,    borderColor: 'violet',  fill: false });
+        datasets.push({ label: 'Humidity (%)',       data: data.humidity,   borderColor: 'skyblue', fill: false, borderDash: [5,5] });
+        datasets.push({ label: 'Ambient Temp',       data: data.ambientTemp,borderColor: 'salmon',  fill: false, borderDash: [5,5] });
+      }
+
       new Chart(document.getElementById('chart'), {
         type: 'line',
         data: {
           labels: data.labels,
-          datasets: [
-            {
-              label: 'Sensor A',
-              data: data.sensorA,
-              borderColor: 'orange',
-              fill: false,
-            },
-            {
-              label: 'Sensor B',
-              data: data.sensorB,
-              borderColor: 'cyan',
-              fill: false,
-            },
-            {
-              label: 'Sensor C',
-              data: data.sensorC,
-              borderColor: 'lime',
-              fill: false,
-            },
-          ]
+          datasets,
         },
         options: {
           scales: {
