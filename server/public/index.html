@@ -81,8 +81,9 @@ datePicker.addEventListener('change', () =>
         console.log("report data " + text)
         const items = text.trim().split(',');
 
-        var sensor = items[0];
-        var lastRecordedDate = items[1];
+        const isNewFormat = items[0] === '01';
+        var sensor = isNewFormat ? items[1] : items[0];
+        var lastRecordedDate = isNewFormat ? items[2] : items[1];
 
         return {sensor, lastRecordedDate};
     }
