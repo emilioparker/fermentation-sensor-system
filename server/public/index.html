@@ -145,15 +145,15 @@ datePicker.addEventListener('change', () =>
       if(data == null) return;
 
       const datasets = [
-        { label: 'Sensor A', data: data.sensorA, borderColor: 'orange', fill: false },
-        { label: 'Sensor B', data: data.sensorB, borderColor: 'cyan',   fill: false },
-        { label: 'Sensor C', data: data.sensorC, borderColor: 'lime',   fill: false },
+        { label: 'Sensor A', data: data.sensorA, borderColor: 'orange', fill: false, yAxisID: 'y' },
+        { label: 'Sensor B', data: data.sensorB, borderColor: 'cyan',   fill: false, yAxisID: 'y' },
+        { label: 'Sensor C', data: data.sensorC, borderColor: 'lime',   fill: false, yAxisID: 'y' },
       ];
 
       if (data.sensorD.length > 0) {
-        datasets.push({ label: 'Sensor D',          data: data.sensorD,    borderColor: 'violet',  fill: false });
-        datasets.push({ label: 'Humidity (%)',       data: data.humidity,   borderColor: 'skyblue', fill: false, borderDash: [5,5] });
-        datasets.push({ label: 'Ambient Temp',       data: data.ambientTemp,borderColor: 'salmon',  fill: false, borderDash: [5,5] });
+        datasets.push({ label: 'Sensor D',    data: data.sensorD,    borderColor: 'violet',  fill: false, yAxisID: 'y' });
+        datasets.push({ label: 'Humidity (%)', data: data.humidity,  borderColor: 'skyblue', fill: false, yAxisID: 'y1', borderDash: [5,5] });
+        datasets.push({ label: 'Ambient Temp', data: data.ambientTemp, borderColor: 'salmon', fill: false, yAxisID: 'y' , borderDash: [5,5] });
       }
 
       new Chart(document.getElementById('chart'), {
@@ -170,8 +170,18 @@ datePicker.addEventListener('change', () =>
               ticks: { color: '#bbb' },
             },
             y: {
+              type: 'linear',
+              position: 'left',
               ticks: { color: '#bbb' },
-            }
+            },
+            y1: {
+              type: 'linear',
+              position: 'right',
+              min: 0,
+              max: 100,
+              ticks: { color: 'skyblue', callback: v => v + '%' },
+              grid: { drawOnChartArea: false },
+            },
           },
           plugins: {
             legend: { labels: { color: '#fff' } }

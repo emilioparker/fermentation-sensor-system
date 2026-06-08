@@ -248,21 +248,49 @@ async fn handle_get(State(state): State<AppState>, Query(params): Query<GetParam
     all_data
 }
 
-async fn handle_get_report(State(state): State<AppState>, Query(params) : Query<GetReportParams>) -> String 
+async fn find_latest_sample_for_sensor(sensor: &str) -> Option<String>
 {
-    println!("HandleGetReport:requested report for sensor {}", params.sensor);
-    let samples_lock = state.last_sample.lock().await;
-    if let Some(last_sample)  = samples_lock.get(&params.sensor)
+    let mut read_dir = tokio::fs::read_dir("data").await.ok()?;
+    let prefix = format!("{}_", sensor);
+    let mut latest_file: Option<String> = None;
+
+    while let Ok(Some(entry)) = read_dir.next_entry().await
     {
-        let data = format!("{last_sample}");
-        return data;
-    }
-    else 
-    {
-        let data = format!("{},error", params.sensor);
-        return data;
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if name_str.starts_with(&prefix) && name_str.ends_with(".csv")
+        {
+            if latest_file.as_deref().map_or(true, |cur| name_str.as_ref() > cur)
+            {
+                latest_file = Some(name_str.into_owned());
+            }
+        }
     }
 
+    let file_name = latest_file?;
+    println!("HandleGetReport: reading latest file {}", file_name);
+    let content = tokio::fs::read_to_string(format!("data/{}", file_name)).await.ok()?;
+    content.lines().last().map(|s| s.to_string())
+}
+
+async fn handle_get_report(State(state): State<AppState>, Query(params) : Query<GetReportParams>) -> String
+{
+    println!("HandleGetReport:requested report for sensor {}", params.sensor);
+    {
+        let samples_lock = state.last_sample.lock().await;
+        if let Some(last_sample) = samples_lock.get(&params.sensor)
+        {
+            return last_sample.clone();
+        }
+    }
+
+    println!("HandleGetReport: state empty, searching latest file for {}", params.sensor);
+    if let Some(last_line) = find_latest_sample_for_sensor(&params.sensor).await
+    {
+        return last_line;
+    }
+
+    format!("{},error", params.sensor)
 }
 
 #[tokio::main]
