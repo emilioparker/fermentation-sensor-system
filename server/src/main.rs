@@ -166,7 +166,7 @@ fn get_data(path_string : &str) -> String
 // voy a recibir data en un rango x
 async fn handle_post(State(state): State<AppState>, payload: String) -> String 
 {
-    // println!("{}", payload);
+    println!("HandlePost:Received payload:\n{}", payload);
 
     // get the correct file
 
