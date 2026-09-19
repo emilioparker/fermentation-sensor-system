@@ -61,33 +61,33 @@ void lcdShowUploadResult(bool success, int count) {
 }
 
 void lcdShowReadings(const struct tm& timeinfo,
-                     float tempC0, float tempC1, float tempC2, float tempC3,
-                     float humidity, float dhtTemp, bool dhtOk) {
+                     float tempC0, float tempC1, float tempC2,
+                     float humidity, float ambientTemp, bool ambientOk) {
   lcd.clear();
   lcd.setCursor(0, 0);
   char timeBuf[17];
   strftime(timeBuf, sizeof(timeBuf), "%m/%d %H:%M:%S", &timeinfo);
   lcd.print(timeBuf);
 
-  static bool showDHT = false;
-  showDHT = !showDHT;
+  static bool showAmbient = false;
+  showAmbient = !showAmbient;
   lcd.setCursor(0, 1);
-  if (showDHT) {
-    if (dhtOk) {
+  if (showAmbient) {
+    if (ambientOk) {
       char hBuf[5], tBuf[5];
-      dtostrf(humidity, 4, 1, hBuf);
-      dtostrf(dhtTemp,  4, 1, tBuf);
+      dtostrf(humidity,    4, 1, hBuf);
+      dtostrf(ambientTemp, 4, 1, tBuf);
       lcd.print("H:"); lcd.print(hBuf); lcd.print("% T:"); lcd.print(tBuf);
     } else {
-      lcd.print("DHT: error");
+      lcd.print("SHT4x: error");
     }
   } else {
-    char buf[5];
-    float temps[4] = {tempC0, tempC1, tempC2, tempC3};
-    for (int i = 0; i < 4; i++) {
+    char buf[8];
+    float temps[3] = {tempC0, tempC1, tempC2};
+    for (int i = 0; i < 3; i++) {
       if (i > 0) lcd.print(" ");
       if (temps[i] != DEVICE_DISCONNECTED_C) {
-        dtostrf(temps[i], 3, 0, buf);
+        dtostrf(temps[i], 4, 1, buf);
         lcd.print(buf);
       } else {
         lcd.print("---");

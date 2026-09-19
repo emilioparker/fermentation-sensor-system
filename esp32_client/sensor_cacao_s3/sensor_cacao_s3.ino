@@ -7,21 +7,22 @@
 #include "lcd_display.h"
 #include "OneWire.h"
 #include "DallasTemperature.h"
-#include <DHT.h>
+#include <Adafruit_SHT4x.h>
 #include "wifi_manager.h"
 #include <HTTPClient.h>
 #include "time_utils.h"
 #include "file_manager.h"
 
-#define ONE_WIRE_BUS 2
-#define DHT_PIN      4
+#define ONE_WIRE_BUS  2
+#define SHT41_SDA_PIN 4
+#define SHT41_SCL_PIN 5
 
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
-DHT dht(DHT_PIN, DHT11);
+Adafruit_SHT4x sht4 = Adafruit_SHT4x();
 
 #define SENSOR_ID    "goliat"
-#define DATA_VERSION "01"
+#define DATA_VERSION "02"
 
 // Circular buffer for temperature readings
 #define MAX_READINGS     100
@@ -89,10 +90,17 @@ void sendBuffer() {
 
 void setup() {
   sensors.begin();
-  dht.begin();
   Serial.begin(115200);
 
   lcdInit();
+
+  Wire1.begin(SHT41_SDA_PIN, SHT41_SCL_PIN);
+  if (!sht4.begin(&Wire1)) {
+    Serial.println("Couldn't find SHT4x sensor");
+  } else {
+    sht4.setPrecision(SHT4X_HIGH_PRECISION);
+    sht4.setHeater(SHT4X_NO_HEATER);
+  }
 
   if (!LittleFS.begin(FORMAT_LITTLEFS_IF_FAILED)) {
     Serial.println("LittleFS Mount Failed");
@@ -124,13 +132,13 @@ void loop() {
     float tempC0 = sensors.getTempCByIndex(0);
     float tempC1 = sensors.getTempCByIndex(1);
     float tempC2 = sensors.getTempCByIndex(2);
-    float tempC3 = sensors.getTempCByIndex(3);
 
-    float humidity = dht.readHumidity();
-    float dhtTemp  = dht.readTemperature();
-    bool  dhtOk    = !isnan(humidity) && !isnan(dhtTemp);
+    sensors_event_t shtHumidity, shtTemp;
+    bool  ambientOk    = sht4.getEvent(&shtHumidity, &shtTemp);
+    float humidity     = shtHumidity.relative_humidity;
+    float ambientTemp  = shtTemp.temperature;
 
-    lcdShowReadings(timeinfo, tempC0, tempC1, tempC2, tempC3, humidity, dhtTemp, dhtOk);
+    lcdShowReadings(timeinfo, tempC0, tempC1, tempC2, humidity, ambientTemp, ambientOk);
 
     // Save to circular buffer every 5 minutes
     if (now - lastSaveTime >= SAVE_INTERVAL) {
@@ -139,18 +147,17 @@ void loop() {
       char datetime[36];
       buildDatetimeString(datetime, sizeof(datetime), timeinfo);
 
-      // Format: SENSOR_ID,datetime,t0,t1,t2,t3,humidity,dht_temp
-      char t0[7], t1[7], t2[7], t3[7], hum[7], dhtT[7];
+      // Format: SENSOR_ID,datetime,t0,t1,t2,humidity,ambient_temp
+      char t0[7], t1[7], t2[7], hum[7], ambT[7];
       dtostrf(tempC0 != DEVICE_DISCONNECTED_C ? tempC0 : 0, 5, 2, t0);
       dtostrf(tempC1 != DEVICE_DISCONNECTED_C ? tempC1 : 0, 5, 2, t1);
       dtostrf(tempC2 != DEVICE_DISCONNECTED_C ? tempC2 : 0, 5, 2, t2);
-      dtostrf(tempC3 != DEVICE_DISCONNECTED_C ? tempC3 : 0, 5, 2, t3);
-      dtostrf(dhtOk ? humidity : 0, 5, 2, hum);
-      dtostrf(dhtOk ? dhtTemp  : 0, 5, 2, dhtT);
+      dtostrf(ambientOk ? humidity    : 0, 5, 2, hum);
+      dtostrf(ambientOk ? ambientTemp : 0, 5, 2, ambT);
 
-      snprintf(readingBuffer[bufferHead], 99, "%s,%s,%s,%s,%s,%s,%s,%s,%s",
+      snprintf(readingBuffer[bufferHead], 99, "%s,%s,%s,%s,%s,%s,%s,%s",
                DATA_VERSION, SENSOR_ID, datetime,
-               t0, t1, t2, t3, hum, dhtT);
+               t0, t1, t2, hum, ambT);
 
       char line[100];
       snprintf(line, sizeof(line), "%s\n", readingBuffer[bufferHead]);

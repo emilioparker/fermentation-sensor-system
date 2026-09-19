@@ -34,8 +34,7 @@ fn extract_data(line: &str) -> Option<(String, String, DateTime<FixedOffset>, f3
     let mut parts = line.split(',');
 
     let first = parts.next().unwrap_or("").trim();
-    let is_new_format = first == "01";
-    println!("data version: {}", if is_new_format { first } else { "legacy" });
+    println!("data version: {}", if first == "01" || first == "02" { first } else { "legacy" });
 
     let sensor_id: String;
     let date_str: &str;
@@ -46,27 +45,44 @@ fn extract_data(line: &str) -> Option<(String, String, DateTime<FixedOffset>, f3
     let humidity: f32;
     let dht_temp: f32;
 
-    if is_new_format
+    match first
     {
-        sensor_id = parts.next().unwrap_or("ufo").trim().to_string();
-        date_str = parts.next().unwrap_or("");
-        t0       = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
-        t1       = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
-        t2       = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
-        t3       = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
-        humidity = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
-        dht_temp = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
-    }
-    else
-    {
-        sensor_id = first.to_string();
-        date_str  = parts.next().unwrap_or("");
-        t0        = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
-        t1        = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
-        t2        = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
-        t3        = 0.0;
-        humidity  = 0.0;
-        dht_temp  = 0.0;
+        // version 02: SENSOR_ID,datetime,t0,t1,t2,humidity,dht_temp (3 sensors)
+        "02" =>
+        {
+            sensor_id = parts.next().unwrap_or("ufo").trim().to_string();
+            date_str = parts.next().unwrap_or("");
+            t0       = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
+            t1       = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
+            t2       = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
+            t3       = 0.0;
+            humidity = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
+            dht_temp = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
+        },
+        // version 01: SENSOR_ID,datetime,t0,t1,t2 (no humidity/dht)
+        "01" =>
+        {
+            sensor_id = parts.next().unwrap_or("ufo").trim().to_string();
+            date_str = parts.next().unwrap_or("");
+            t0       = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
+            t1       = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
+            t2       = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
+            t3       = 0.0;
+            humidity = 0.0;
+            dht_temp = 0.0;
+        },
+        // legacy: SENSOR_ID,datetime,t0,t1,t2 (no version prefix)
+        _ =>
+        {
+            sensor_id = first.to_string();
+            date_str  = parts.next().unwrap_or("");
+            t0        = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
+            t1        = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
+            t2        = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
+            t3        = 0.0;
+            humidity  = 0.0;
+            dht_temp  = 0.0;
+        },
     }
 
     match DateTime::parse_from_rfc3339(date_str)

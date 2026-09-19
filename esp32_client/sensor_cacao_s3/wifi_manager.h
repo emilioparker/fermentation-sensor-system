@@ -97,8 +97,8 @@ void wifiSetup() {
     delay(3000);
   }
 
-  if (!connectWiFi()) {
+  while (!connectWiFi()) {
     lcdShowNoWifi();
-    while (true) delay(1000);
+    delay(5000);
   }
 }
