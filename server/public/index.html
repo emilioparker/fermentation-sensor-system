@@ -81,7 +81,7 @@ datePicker.addEventListener('change', () =>
         console.log("report data " + text)
         const items = text.trim().split(',');
 
-        const isNewFormat = items[0] === '01';
+        const isNewFormat = items[0] === '01' || items[0] === '02';
         var sensor = isNewFormat ? items[1] : items[0];
         var lastRecordedDate = isNewFormat ? items[2] : items[1];
 
@@ -115,7 +115,10 @@ datePicker.addEventListener('change', () =>
             const fields = line.split(',');
             let timestamp, a, b, c, d, hum, amb;
 
-            if (fields.length >= 9) {
+            if (fields[0] === '02') {
+                // version,sensor_id,date,temp1,temp2,temp3,humidity,ambient_temperature
+                [, , timestamp, a, b, c, hum, amb] = fields;
+            } else if (fields[0] === '01') {
                 // version,sensor_id,date,temp1,temp2,temp3,temp4,humidity,ambient_temperature
                 [, , timestamp, a, b, c, d, hum, amb] = fields;
             } else {
@@ -152,6 +155,8 @@ datePicker.addEventListener('change', () =>
 
       if (data.sensorD.length > 0) {
         datasets.push({ label: 'Sensor D',    data: data.sensorD,    borderColor: 'violet',  fill: false, yAxisID: 'y' });
+      }
+      if (data.humidity.length > 0) {
         datasets.push({ label: 'Humidity (%)', data: data.humidity,  borderColor: 'skyblue', fill: false, yAxisID: 'y1', borderDash: [5,5] });
         datasets.push({ label: 'Ambient Temp', data: data.ambientTemp, borderColor: 'salmon', fill: false, yAxisID: 'y' , borderDash: [5,5] });
       }
