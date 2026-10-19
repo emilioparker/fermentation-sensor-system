@@ -21,21 +21,38 @@ OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 Adafruit_SHT4x sht4 = Adafruit_SHT4x();
 
-#define SENSOR_ID    "goliat"
+#define SENSOR_ID    "thor"
 #define DATA_VERSION "02"
 
-// Circular buffer for temperature readings
-#define MAX_READINGS     100
+// Circular buffer for temperature readings (allocated in PSRAM)
+#define PSRAM_READINGS    8640      // 30 days at 5 min
+#define FALLBACK_READINGS 100       // internal RAM if PSRAM is unavailable
+#define READING_LEN       99
+#define UPLOAD_BATCH      200       // entries per POST
 #define READ_INTERVAL    5000UL    // 5 seconds
 #define SAVE_INTERVAL    300000UL  // 5 minutes
 #define BUFFER_FILE      "/buffer.csv"
 
-char readingBuffer[MAX_READINGS][99];
+char (*readingBuffer)[READING_LEN] = nullptr;
+int  maxReadings = 0;
 int  bufferHead  = 0;
 int  bufferCount = 0;
 
 unsigned long lastReadTime = 0;
 unsigned long lastSaveTime = 0;
+
+void allocateBuffer() {
+  if (psramFound()) {
+    readingBuffer = (char (*)[READING_LEN]) ps_malloc(PSRAM_READINGS * READING_LEN);
+    maxReadings   = PSRAM_READINGS;
+  }
+  if (!readingBuffer) {
+    Serial.println("PSRAM unavailable, using internal RAM");
+    readingBuffer = (char (*)[READING_LEN]) malloc(FALLBACK_READINGS * READING_LEN);
+    maxReadings   = FALLBACK_READINGS;
+  }
+  Serial.print("Buffer capacity: "); Serial.print(maxReadings); Serial.println(" readings");
+}
 
 void loadBufferFromFlash() {
   File f = LittleFS.open(BUFFER_FILE, "r");
@@ -44,47 +61,79 @@ void loadBufferFromFlash() {
     Serial.print("Buffer file doesn't exist, skipping loading from flash ");
     return;
   }
-  while (f.available() && bufferCount < MAX_READINGS) {
+  while (f.available() && bufferCount < maxReadings) {
     String line = f.readStringUntil('\n');
     line.trim();
     if (line.length() == 0) continue;
     strncpy(readingBuffer[bufferHead], line.c_str(), 95);
     readingBuffer[bufferHead][95] = '\0';
-    Serial.println(readingBuffer[bufferHead]);
-    bufferHead = (bufferHead + 1) % MAX_READINGS;
+    bufferHead = (bufferHead + 1) % maxReadings;
     bufferCount++;
   }
   f.close();
   Serial.print("Loaded "); Serial.print(bufferCount); Serial.println(" entries from flash");
 }
 
-void sendBuffer() {
-  if (bufferCount == 0 || WiFi.status() != WL_CONNECTED) return;
+int oldestIndex() {
+  return (bufferHead - bufferCount + maxReadings) % maxReadings;
+}
 
-  // Build plain text payload: one entry per line
+// POST n entries starting at buffer index start, one entry per line
+bool postBatch(int start, int n) {
   String payload = "";
-  int start = (bufferHead - bufferCount + MAX_READINGS) % MAX_READINGS;
-  for (int i = 0; i < bufferCount; i++) {
-    int idx = (start + i) % MAX_READINGS;
-    payload += readingBuffer[idx];
+  payload.reserve(n * 72);
+  for (int i = 0; i < n; i++) {
+    payload += readingBuffer[(start + i) % maxReadings];
     payload += "\n";
   }
 
   HTTPClient http;
   http.begin("https://cacao.parkerlabs.dev/samples");
   http.addHeader("Content-Type", "text/plain");
-  int sent = bufferCount;
   int code = http.POST(payload);
-  Serial.print("POST status: "); Serial.println(code);
+  Serial.print("POST "); Serial.print(n); Serial.print(" entries, status: "); Serial.println(code);
   http.end();
 
-  bool success = (code >= 200 && code < 300);
+  return code >= 200 && code < 300;
+}
+
+void rewriteBufferFile() {
+  File f = LittleFS.open(BUFFER_FILE, FILE_WRITE);
+  if (!f) {
+    Serial.println("Failed to rewrite buffer file");
+    return;
+  }
+  int start = oldestIndex();
+  for (int i = 0; i < bufferCount; i++) {
+    f.println(readingBuffer[(start + i) % maxReadings]);
+  }
+  f.close();
+}
+
+void sendBuffer() {
+  if (bufferCount == 0 || WiFi.status() != WL_CONNECTED) return;
+
+  // Send oldest entries first, in batches; stop at the first failure
+  int sent = 0;
+  bool success = true;
+  while (bufferCount > 0) {
+    int n = min(bufferCount, UPLOAD_BATCH);
+    if (!postBatch(oldestIndex(), n)) {
+      success = false;
+      break;
+    }
+    bufferCount -= n;
+    sent += n;
+  }
+
   lcdShowUploadResult(success, sent);
 
-  if (success) {
-    bufferHead  = 0;
-    bufferCount = 0;
+  if (bufferCount == 0) {
+    bufferHead = 0;
     deleteFile(LittleFS, BUFFER_FILE);
+  } else if (sent > 0) {
+    // Partial upload: drop the sent entries from flash so a reboot doesn't resend them
+    rewriteBufferFile();
   }
 }
 
@@ -105,6 +154,7 @@ void setup() {
   if (!LittleFS.begin(FORMAT_LITTLEFS_IF_FAILED)) {
     Serial.println("LittleFS Mount Failed");
   }
+  allocateBuffer();
   loadBufferFromFlash();
 
   wifiSetup();
@@ -155,7 +205,7 @@ void loop() {
       dtostrf(ambientOk ? humidity    : 0, 5, 2, hum);
       dtostrf(ambientOk ? ambientTemp : 0, 5, 2, ambT);
 
-      snprintf(readingBuffer[bufferHead], 99, "%s,%s,%s,%s,%s,%s,%s,%s",
+      snprintf(readingBuffer[bufferHead], READING_LEN, "%s,%s,%s,%s,%s,%s,%s,%s",
                DATA_VERSION, SENSOR_ID, datetime,
                t0, t1, t2, hum, ambT);
 
@@ -163,10 +213,10 @@ void loop() {
       snprintf(line, sizeof(line), "%s\n", readingBuffer[bufferHead]);
       appendFile(LittleFS, BUFFER_FILE, line);
 
-      bufferHead = (bufferHead + 1) % MAX_READINGS;
-      if (bufferCount < MAX_READINGS) bufferCount++;
+      bufferHead = (bufferHead + 1) % maxReadings;
+      if (bufferCount < maxReadings) bufferCount++;
 
-      Serial.print("Saved: "); Serial.println(readingBuffer[(bufferHead - 1 + MAX_READINGS) % MAX_READINGS]);
+      Serial.print("Saved: "); Serial.println(readingBuffer[(bufferHead - 1 + maxReadings) % maxReadings]);
 
       sendBuffer();
     }

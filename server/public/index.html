@@ -127,15 +127,21 @@ datePicker.addEventListener('change', () =>
             }
 
             labels.push(new Date(timestamp));
-            sensorA.push(parseFloat(a));
-            sensorB.push(parseFloat(b));
-            sensorC.push(parseFloat(c));
-            if (d !== undefined) sensorD.push(parseFloat(d));
-            if (hum !== undefined) humidity.push(parseFloat(hum));
-            if (amb !== undefined) ambientTemp.push(parseFloat(amb));
+            sensorA.push(parseValue(a));
+            sensorB.push(parseValue(b));
+            sensorC.push(parseValue(c));
+            if (d !== undefined) sensorD.push(parseValue(d));
+            if (hum !== undefined) humidity.push(parseValue(hum));
+            if (amb !== undefined) ambientTemp.push(parseValue(amb));
         }
 
         return { labels, sensorA, sensorB, sensorC, sensorD, humidity, ambientTemp };
+    }
+
+    // 0 marks an invalid reading; null leaves a gap in the chart
+    function parseValue(text) {
+        const value = parseFloat(text);
+        return (isNaN(value) || value === 0) ? null : value;
     }
 
     // ... your chart configuration
