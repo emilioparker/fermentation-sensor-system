@@ -352,7 +352,7 @@ async fn main()
         .nest_service("/tracking", axum::routing::get_service(ServeDir::new("public")))
         .route("/samples", post(handle_post))
         .route("/samples", get(handle_get))
-        .route("/tracking_csv", get(handle_get_csv))
+        .route("/samples_csv", get(handle_get_csv))
         .route("/report", get(handle_get_report)).with_state(shared_state);
 
 
