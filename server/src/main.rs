@@ -264,6 +264,26 @@ async fn handle_get(State(state): State<AppState>, Query(params): Query<GetParam
     all_data
 }
 
+const CSV_HEADER: &str = "version,sensor_id,datetime,t0,t1,t2,humidity,ambient_temp";
+
+async fn handle_get_csv(Query(params): Query<GetParams>) -> impl axum::response::IntoResponse
+{
+    println!("HandleGetCsv:requested csv for sensor {} with Date: {}", params.sensor, params.date);
+    let path_string = format!("data/{}_{}.csv", params.sensor, params.date);
+    let all_data = get_data(&path_string);
+    let body = format!("{}\n{}", CSV_HEADER, all_data);
+    (
+        [
+            (axum::http::header::CONTENT_TYPE, "text/csv; charset=utf-8".to_string()),
+            (
+                axum::http::header::CONTENT_DISPOSITION,
+                format!("inline; filename=\"{}_{}.csv\"", params.sensor, params.date),
+            ),
+        ],
+        body,
+    )
+}
+
 async fn find_latest_sample_for_sensor(sensor: &str) -> Option<String>
 {
     let mut read_dir = tokio::fs::read_dir("data").await.ok()?;
@@ -332,6 +352,7 @@ async fn main()
         .nest_service("/tracking", axum::routing::get_service(ServeDir::new("public")))
         .route("/samples", post(handle_post))
         .route("/samples", get(handle_get))
+        .route("/tracking_csv", get(handle_get_csv))
         .route("/report", get(handle_get_report)).with_state(shared_state);
 
 
