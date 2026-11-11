@@ -34,7 +34,7 @@ fn extract_data(line: &str) -> Option<(String, String, DateTime<FixedOffset>, f3
     let mut parts = line.split(',');
 
     let first = parts.next().unwrap_or("").trim();
-    println!("data version: {}", if first == "01" || first == "02" { first } else { "legacy" });
+    println!("data version: {}", if first == "01" || first == "02" || first == "04" { first } else { "legacy" });
 
     let sensor_id: String;
     let date_str: &str;
@@ -60,7 +60,8 @@ fn extract_data(line: &str) -> Option<(String, String, DateTime<FixedOffset>, f3
             dht_temp = parts.next().unwrap_or("0").trim().parse().unwrap_or(0.0);
         },
         // version 01: SENSOR_ID,datetime,t0,t1,t2 (no humidity/dht)
-        "01" =>
+        // version 04: SENSOR_ID,datetime,t0,t1,t2 (SHT41 removed, same layout as 01)
+        "01" | "04" =>
         {
             sensor_id = parts.next().unwrap_or("ufo").trim().to_string();
             date_str = parts.next().unwrap_or("");
