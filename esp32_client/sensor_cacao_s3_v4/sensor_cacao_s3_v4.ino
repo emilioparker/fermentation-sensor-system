@@ -38,6 +38,12 @@ int  bufferCount = 0;
 unsigned long lastReadTime = 0;
 unsigned long lastSaveTime = 0;
 
+// DS18B20 returns -127 when unreachable and 85 (power-on reset value) before
+// its first conversion completes; neither is a real reading.
+bool isValidTemp(float t) {
+  return t != DEVICE_DISCONNECTED_C && t != 85.0f;
+}
+
 void allocateBuffer() {
   if (psramFound()) {
     readingBuffer = (char (*)[READING_LEN]) ps_malloc(PSRAM_READINGS * READING_LEN);
@@ -184,8 +190,10 @@ void sendBuffer() {
 }
 
 void setup() {
-  sensors.begin();
   Serial.begin(115200);
+  delay(500);  // let the 1-Wire sensors power up before enumerating
+  sensors.begin();
+  sensors.requestTemperatures();  // warm-up conversion; result discarded
 
   lcdInit();
 
@@ -224,7 +232,11 @@ void loop() {
     lcdShowReadings(timeinfo, tempC0, tempC1, tempC2);
 
     // Save to circular buffer every 5 minutes
-    if (now - lastSaveTime >= SAVE_INTERVAL) {
+    // Skip (and retry on the next read) if no sensor gave a real value, e.g. right after boot
+    bool anyValid = isValidTemp(tempC0) || isValidTemp(tempC1) || isValidTemp(tempC2);
+    if (!anyValid) Serial.println("No valid temperature reading, skipping save");
+
+    if (anyValid && now - lastSaveTime >= SAVE_INTERVAL) {
       lastSaveTime = now;
 
       char datetime[36];
@@ -232,9 +244,9 @@ void loop() {
 
       // Format (v04): DATA_VERSION,SENSOR_ID,datetime,t0,t1,t2
       char t0[7], t1[7], t2[7];
-      dtostrf(tempC0 != DEVICE_DISCONNECTED_C ? tempC0 : 0, 5, 2, t0);
-      dtostrf(tempC1 != DEVICE_DISCONNECTED_C ? tempC1 : 0, 5, 2, t1);
-      dtostrf(tempC2 != DEVICE_DISCONNECTED_C ? tempC2 : 0, 5, 2, t2);
+      dtostrf(isValidTemp(tempC0) ? tempC0 : 0, 5, 2, t0);
+      dtostrf(isValidTemp(tempC1) ? tempC1 : 0, 5, 2, t1);
+      dtostrf(isValidTemp(tempC2) ? tempC2 : 0, 5, 2, t2);
 
       snprintf(readingBuffer[bufferHead], READING_LEN, "%s,%s,%s,%s,%s,%s",
                DATA_VERSION, SENSOR_ID, datetime,
