@@ -23,10 +23,31 @@ struct GetReportParams
     sensor: String,
 }
 
+#[derive(Deserialize)]
+struct GetHealthParams
+{
+    sensor: String,
+}
+
+#[derive(Clone, Serialize)]
+struct DeviceHealth
+{
+    version: String,
+    sensor_id: String,
+    temperature: f32,
+    humidity: f32,
+    // Seconds since the monitor booted, and the power-on time derived from it
+    uptime_s: u64,
+    powered_on_at: String,
+    received_at: String,
+}
+
 #[derive(Clone)]
 struct AppState 
 {
     last_sample: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
+    // Latest health per sensor, in memory only (lost on restart)
+    last_health: Arc<tokio::sync::Mutex<HashMap<String, DeviceHealth>>>,
 }
 
 fn extract_data(line: &str) -> Option<(String, String, DateTime<FixedOffset>, f32, f32, f32, f32, f32, f32)>
@@ -34,7 +55,7 @@ fn extract_data(line: &str) -> Option<(String, String, DateTime<FixedOffset>, f3
     let mut parts = line.split(',');
 
     let first = parts.next().unwrap_or("").trim();
-    println!("data version: {}", if first == "01" || first == "02" || first == "04" { first } else { "legacy" });
+    println!("data version: {}", if first == "01" || first == "02" || first == "04" || first == "05" { first } else { "legacy" });
 
     let sensor_id: String;
     let date_str: &str;
@@ -61,7 +82,8 @@ fn extract_data(line: &str) -> Option<(String, String, DateTime<FixedOffset>, f3
         },
         // version 01: SENSOR_ID,datetime,t0,t1,t2 (no humidity/dht)
         // version 04: SENSOR_ID,datetime,t0,t1,t2 (SHT41 removed, same layout as 01)
-        "01" | "04" =>
+        // version 05: SENSOR_ID,datetime,t0,t1,t2 (same layout as 01)
+        "01" | "04" | "05" =>
         {
             sensor_id = parts.next().unwrap_or("ufo").trim().to_string();
             date_str = parts.next().unwrap_or("");
@@ -330,6 +352,54 @@ async fn handle_get_report(State(state): State<AppState>, Query(params) : Query<
     format!("{},error", params.sensor)
 }
 
+// Parses "version,sensor_id,temperature,humidity,uptime_s" (version 01)
+fn parse_health(line: &str) -> Option<DeviceHealth>
+{
+    let parts: Vec<&str> = line.trim().split(',').map(|p| p.trim()).collect();
+    if parts.len() != 5 || parts[0] != "01" || parts[1].is_empty()
+    {
+        return None;
+    }
+    let uptime_s: u64 = parts[4].parse().ok()?;
+
+    let now = Utc::now();
+    let uptime = chrono::Duration::try_seconds(i64::try_from(uptime_s).ok()?)?;
+    let powered_on_at = (now - uptime).to_rfc3339();
+
+    Some(DeviceHealth
+    {
+        version: parts[0].to_string(),
+        sensor_id: parts[1].to_string(),
+        temperature: parts[2].parse().ok()?,
+        humidity: parts[3].parse().ok()?,
+        uptime_s,
+        powered_on_at,
+        received_at: now.to_rfc3339(),
+    })
+}
+
+async fn handle_post_health(State(state): State<AppState>, payload: String) -> (axum::http::StatusCode, String)
+{
+    println!("HandlePostHealth: received {}", payload.trim());
+    match parse_health(&payload)
+    {
+        Some(health) =>
+        {
+            let mut lock = state.last_health.lock().await;
+            lock.insert(health.sensor_id.clone(), health);
+            (axum::http::StatusCode::OK, "ok".to_owned())
+        },
+        None => (axum::http::StatusCode::BAD_REQUEST, "invalid health format, expected version,sensor_id,temperature,humidity,uptime_s".to_owned()),
+    }
+}
+
+async fn handle_get_health(State(state): State<AppState>, Query(params): Query<GetHealthParams>) -> Result<Json<DeviceHealth>, axum::http::StatusCode>
+{
+    println!("HandleGetHealth: requested health for sensor {}", params.sensor);
+    let lock = state.last_health.lock().await;
+    lock.get(&params.sensor).cloned().map(Json).ok_or(axum::http::StatusCode::NOT_FOUND)
+}
+
 #[tokio::main]
 async fn main() 
 {
@@ -337,6 +407,7 @@ async fn main()
     let shared_state = AppState 
     {
         last_sample: Arc::new(Mutex::new(HashMap::new())),
+        last_health: Arc::new(Mutex::new(HashMap::new())),
     };
 
 
@@ -351,7 +422,9 @@ async fn main()
     // Build our router
     let app = Router::new()
         .nest_service("/tracking", axum::routing::get_service(ServeDir::new("public")))
+        .route("/api/monitor/samples", post(handle_post))
         .route("/samples", post(handle_post))
+        .route("/api/monitor/health", post(handle_post_health).get(handle_get_health))
         .route("/samples", get(handle_get))
         .route("/samples_csv", get(handle_get_csv))
         .route("/report", get(handle_get_report)).with_state(shared_state);

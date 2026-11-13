@@ -7,6 +7,7 @@
 #include "lcd_display.h"
 #include "OneWire.h"
 #include "DallasTemperature.h"
+#include "DHT.h"
 #include "wifi_manager.h"
 #include <HTTPClient.h>
 #include "time_utils.h"
@@ -18,8 +19,14 @@
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 
+// DHT11 inside the enclosure, for device health (internal temp/humidity)
+#define DHT_PIN  4
+#define DHT_TYPE DHT11
+DHT dht(DHT_PIN, DHT_TYPE);
+
 #define SENSOR_ID    "sentry"
-#define DATA_VERSION "04"
+#define DATA_VERSION "05"
+#define SAMPLES_URL  "https://cacao.parkerlabs.dev/api/monitor/samples"
 
 // Circular buffer for temperature readings (allocated in PSRAM)
 #define PSRAM_READINGS    8640      // 30 days at 5 min
@@ -29,6 +36,12 @@ DallasTemperature sensors(&oneWire);
 #define READ_INTERVAL    5000UL    // 5 seconds
 #define SAVE_INTERVAL    300000UL  // 5 minutes
 #define BUFFER_FILE      "/buffer.csv"
+#define HEALTH_INTERVAL  300000UL  // 5 minutes
+#define HEALTH_VERSION   "01"
+
+#ifndef HEALTH_URL
+#define HEALTH_URL "https://cacao.parkerlabs.dev/api/monitor/health"
+#endif
 
 char (*readingBuffer)[READING_LEN] = nullptr;
 int  maxReadings = 0;
@@ -37,6 +50,11 @@ int  bufferCount = 0;
 
 unsigned long lastReadTime = 0;
 unsigned long lastSaveTime = 0;
+unsigned long lastHealthTime = 0;
+
+// Last valid DHT11 reading (only the latest is kept)
+float internalTemp     = NAN;
+float internalHumidity = NAN;
 
 // DS18B20 returns -127 when unreachable and 85 (power-on reset value) before
 // its first conversion completes; neither is a real reading.
@@ -99,7 +117,7 @@ bool appendReadingJson(String& json, const char* line, bool comma) {
 
   char obj[160];
   snprintf(obj, sizeof(obj),
-           "{\"time\":\"%s\",\"t0\":%.2f,\"t1\":%.2f,\"t2\":%.2f,\"format_version\":\"%s\"}",
+           "{\"time\":\"%s\",\"lower\":%.2f,\"middle\":%.2f,\"upper\":%.2f,\"format_version\":\"%s\"}",
            f[2].c_str(), f[3].toFloat(), f[4].toFloat(), f[5].toFloat(), f[0].c_str());
   if (comma) json += ",";
   json += obj;
@@ -138,10 +156,47 @@ bool postBatch(int start, int n) {
   }
 
   HTTPClient http;
-  http.begin("https://cacao.parkerlabs.dev/samples");
+  http.begin(SAMPLES_URL);
   http.addHeader("Content-Type", "text/plain");
   int code = http.POST(payload);
   Serial.print("POST "); Serial.print(n); Serial.print(" entries, status: "); Serial.println(code);
+  http.end();
+
+  return code >= 200 && code < 300;
+}
+
+// Read the DHT11 and keep the value if it's valid; on a failed read the
+// previous reading is retained.
+void readInternalSensor() {
+  float h = dht.readHumidity();
+  float t = dht.readTemperature();
+  if (isnan(h) || isnan(t)) {
+    Serial.println("DHT11 read failed");
+    return;
+  }
+  internalTemp     = t;
+  internalHumidity = h;
+}
+
+// POST device health as "version,sensor_id,temp,humidity,uptime_s".
+// Uptime (not a wall-clock boot time) so it is correct even if NTP sync failed;
+// the server derives the power-on time from it.
+bool sendHealth() {
+  if (isnan(internalTemp) || isnan(internalHumidity)) return false;
+  if (WiFi.status() != WL_CONNECTED) return false;
+
+  // esp_timer is 64-bit microseconds, so unlike millis() it doesn't wrap after 49 days
+  unsigned long long uptimeS = esp_timer_get_time() / 1000000ULL;
+  char payload[80];
+  snprintf(payload, sizeof(payload), "%s,%s,%.1f,%.1f,%llu",
+           HEALTH_VERSION, SENSOR_ID, internalTemp, internalHumidity, uptimeS);
+
+  HTTPClient http;
+  http.begin(HEALTH_URL);
+  http.addHeader("Content-Type", "text/plain");
+  http.addHeader("Authorization", "Bearer " MONITOR_API_KEY);
+  int code = http.POST((uint8_t*)payload, strlen(payload));
+  Serial.print("POST health "); Serial.print(payload); Serial.print(", status: "); Serial.println(code);
   http.end();
 
   return code >= 200 && code < 300;
@@ -194,6 +249,7 @@ void setup() {
   delay(500);  // let the 1-Wire sensors power up before enumerating
   sensors.begin();
   sensors.requestTemperatures();  // warm-up conversion; result discarded
+  dht.begin();
 
   lcdInit();
 
@@ -211,6 +267,7 @@ void setup() {
 
   // Force first save on the first read
   lastSaveTime = millis() - SAVE_INTERVAL;
+  lastHealthTime = millis() - HEALTH_INTERVAL;
 }
 
 void loop() {
@@ -230,6 +287,13 @@ void loop() {
     float tempC2 = sensors.getTempCByIndex(2);
 
     lcdShowReadings(timeinfo, tempC0, tempC1, tempC2);
+
+    readInternalSensor();
+    // Only the latest reading matters, so a failed send just waits for the next interval
+    if (now - lastHealthTime >= HEALTH_INTERVAL && !isnan(internalTemp)) {
+      lastHealthTime = now;
+      sendHealth();
+    }
 
     // Save to circular buffer every 5 minutes
     // Skip (and retry on the next read) if no sensor gave a real value, e.g. right after boot
