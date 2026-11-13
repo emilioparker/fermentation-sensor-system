@@ -117,7 +117,7 @@ bool appendReadingJson(String& json, const char* line, bool comma) {
 
   char obj[160];
   snprintf(obj, sizeof(obj),
-           "{\"time\":\"%s\",\"lower\":%.2f,\"middle\":%.2f,\"upper\":%.2f,\"format_version\":\"%s\"}",
+           "{\"time\":\"%s\",\"upper\":%.2f,\"middle\":%.2f,\"lower\":%.2f,\"format_version\":\"%s\"}",
            f[2].c_str(), f[3].toFloat(), f[4].toFloat(), f[5].toFloat(), f[0].c_str());
   if (comma) json += ",";
   json += obj;

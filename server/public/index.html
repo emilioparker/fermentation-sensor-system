@@ -81,7 +81,7 @@ datePicker.addEventListener('change', () =>
         console.log("report data " + text)
         const items = text.trim().split(',');
 
-        const isNewFormat = ['01', '02', '04'].includes(items[0]);
+        const isNewFormat = ['01', '02', '04', '05'].includes(items[0]);
         var sensor = isNewFormat ? items[1] : items[0];
         var lastRecordedDate = isNewFormat ? items[2] : items[1];
 
@@ -115,8 +115,8 @@ datePicker.addEventListener('change', () =>
             const fields = line.split(',');
             let timestamp, a, b, c, d, hum, amb;
 
-            if (fields[0] === '04') {
-                // version,sensor_id,date,temp1,temp2,temp3
+            if (fields[0] === '04' || fields[0] === '05') {
+                // version,sensor_id,date,temp1,temp2,temp3 (04 and 05)
                 [, , timestamp, a, b, c] = fields;
             } else if (fields[0] === '02') {
                 // version,sensor_id,date,temp1,temp2,temp3,humidity,ambient_temperature
